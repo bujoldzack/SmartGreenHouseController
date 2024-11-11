@@ -1,6 +1,7 @@
 # SmartGreenHouseController
 
 ## Introduction
+The **Smart Greenhouse Controller** project aims to develop an automated and remotely manageable system using a Raspberry Pi as the core component. This system will monitor and control key environmental conditions inside a greenhouse, such as temperature, soil moisture, and light intensity. The goal is to optimize plant growth and ensure that conditions remain within optimal thresholds.
 
 ## Solution Overview
 The solution will be designed to read data from sensors, control actuators based on predefined thresholds, and allow for remote monitoring and control through a web-based dashboard. The data will be managed through AWS IoT Core and stored in DynamoDB, while the dashboard will be built using ThingsBoard to provide an intuitive interface for real-time observation and manual actuator control.
