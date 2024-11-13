@@ -1,5 +1,7 @@
 # SmartGreenHouseController
 
+## Team: Zacharie & Murtaza
+
 ## Introduction
 The **Smart Greenhouse Controller** project aims to develop an automated and remotely manageable system using a Raspberry Pi as the core component. This system will monitor and control key environmental conditions inside a greenhouse, such as temperature, soil moisture, and light intensity. The goal is to optimize plant growth and ensure that conditions remain within optimal thresholds.
 
