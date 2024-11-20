@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import RPi.GPIO as GPIO
+from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTClient
 import time
+import json
+import config
 
 # RGB light pins
 colors = [0x00FF00, 0x0000FF]  # Red, Blue colors
@@ -14,6 +17,21 @@ PIN_CLK = 12
 PIN_DO = 13
 PIN_DI = 15
 PIN_CS = 11
+
+# AWS IoT MQTT Client Setup
+MQTT_CLIENT_ID = "RaspberryPiSoilMoisture"
+MQTT_TOPIC = "champlain/sensor/69/data"
+
+def setupMQTT():
+    client = AWSIoTMQTTClient(MQTT_CLIENT_ID)
+    client.configureEndpoint(config.AWS_HOST, config.AWS_PORT)
+    client.configureCredentials(config.AWS_ROOT_CA, config.AWS_PRIVATE_KEY, config.AWS_CLIENT_CERT)
+    client.configureOfflinePublishQueueing(config.OFFLINE_QUEUE_SIZE)  # Infinite offline publish queueing
+    client.configureDrainingFrequency(config.DRAINING_FREQ)  # Draining frequency in Hz
+    client.configureConnectDisconnectTimeout(config.CONN_DISCONN_TIMEOUT)  # 10 seconds
+    client.configureMQTTOperationTimeout(config.MQTT_OPER_TIMEOUT)  # 5 seconds
+    return client
+
 
 def setup(Rpin, Gpin, Bpin):
     global pins
@@ -50,67 +68,56 @@ def off():
         GPIO.output(pins[i], GPIO.HIGH)  # Turn off all LEDs
 
 def setColor(col):  # For example: col = 0x112233
-    R_val = (col & 0x00FF00) >> 16  # Extract Red value (0-255)
-    G_val = (col & 0x00ff00) >> 8   # Extract Green value (0-255)
-    B_val = (col & 0x0000ff) >> 0   # Extract Blue value (0-255)
+    R_val = (col & 0x00FF00) >> 16
+    G_val = (col & 0x00ff00) >> 8
+    B_val = (col & 0x0000ff) >> 0
 
-    # Map each RGB component to a duty cycle from 0 to 100
     R_val = map(R_val, 0, 255, 0, 100)
     G_val = map(G_val, 0, 255, 0, 100)
     B_val = map(B_val, 0, 255, 0, 100)
 
-    # Set the duty cycle for each color
-    p_R.ChangeDutyCycle(100 - R_val)  # PWM: 100 means fully on, 0 means fully off
+    p_R.ChangeDutyCycle(100 - R_val)  # Change duty cycle
     p_G.ChangeDutyCycle(100 - G_val)
     p_B.ChangeDutyCycle(100 - B_val)
 
 def getADC(channel):
-    # Ensure the channel is valid (0 or 1)
     if channel not in (0, 1):
         raise ValueError("Channel must be 0 or 1")
-
-    # 1. CS LOW
-    GPIO.output(PIN_CS, True)  # Clear previous transmission
-    GPIO.output(PIN_CS, False)  # Bring CS low
-
-    # 2. Start clock
-    GPIO.output(PIN_CLK, False)  # Start clock low
-
-    # 3. Input MUX address
-    for bit in [1, 1, channel]:  # Start bit + MUX address
+    GPIO.output(PIN_CS, False)
+    GPIO.output(PIN_CLK, False)
+    for bit in [1, 1, channel]:
         GPIO.output(PIN_DI, bool(bit))
         GPIO.output(PIN_CLK, True)
         GPIO.output(PIN_CLK, False)
-
-    # 4. Read 8 ADC bits
     value = 0
     for _ in range(8):
         GPIO.output(PIN_CLK, True)
         GPIO.output(PIN_CLK, False)
-        value <<= 1  # Shift bit
+        value <<= 1
         if GPIO.input(PIN_DO):
-            value |= 0x1  # Set bit if DO is HIGH
-
-    # 5. Reset CS
+            value |= 0x1
     GPIO.output(PIN_CS, True)
-
     return value
 
-def loop():
+def loop(mqtt_client):
     setColor(0x00FF00)
+    mqtt_client.connect()
     while True:
-        adc0 = getADC(0)  # Read from channel 0 (soil moisture sensor)
-        moisture = 255 - adc0  # Convert ADC value to moisture level
-        
+        adc0 = getADC(0)
+        moisture = 255 - adc0
         print(f"Moisture: {moisture}")
 
-        # If soil moisture is greater than 69, turn RGB to blue for 5 seconds
+        # Publish moisture data to MQTT
+        payload = json.dumps({"moisture": moisture})
+        mqtt_client.publish(MQTT_TOPIC, payload, 1)
+
+        # Set color based on moisture level
         if moisture > 69:
-            setColor(0x0000FF)  # Set color to blue
-            time.sleep(5)  # Wait for 5 seconds
-            setColor(0x00FF00)  # Set color back to red
+            setColor(0x0000FF)
+            time.sleep(5)
+            setColor(0x00FF00)
         else:
-            setColor(0x00FF00)  # Default color is red
+            setColor(0x00FF00)
         
         time.sleep(1)
 
@@ -123,8 +130,9 @@ def destroy():
 
 if __name__ == "__main__":
     try:
+        mqtt_client = setupMQTT()
         setup(R, G, B)
-        loop()
+        loop(mqtt_client)
     except KeyboardInterrupt:
         destroy()
         print("The end!")
